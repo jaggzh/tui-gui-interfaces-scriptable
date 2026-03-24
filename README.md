@@ -18,4 +18,4 @@ This is a first version -- we definitely need more examples added to this thing.
 
 ## Credits
 
-**me.** *jaggz.h {who is at} gmail.com*
+*jaggz.h {who is at} gmail.com*
