@@ -106,47 +106,26 @@ my $catalog = [
           'A good fit when zenity feels a little too restrained and you still want GTK-native output',
         ],
         examples => [
-          q{TAG=$(yad --entry --title="Release helper" --text="Release tag to ship:" --entry-text="v1.24.0"); printf 'tag=%s
-' "$TAG"},
-          q{TOKEN=$(yad --entry --hide-text --title="Registry token" --text="Paste the temporary access token:"); printf 'token length: %s
-' "${#TOKEN}"},
+          q{TAG=$(yad --entry --title="Release helper" --text="Release tag to ship:" --entry-text="v1.24.0"); printf 'tag=%s\n' "$TAG"},
+          q{TOKEN=$(yad --entry --hide-text --title="Registry token" --text="Paste the temporary access token:"); printf 'token length: %s\n' "${#TOKEN}"},
           q{yad --question --title="Ship it?" --text="Promote staging to production?" --button="Ship it:0" --button="Not today:1" && echo "deploying" || echo "standing down"},
-          q{WHEN=$(yad --calendar --title="Freeze date" --text="Pick the code freeze date:" --date-format="%Y-%m-%d"); printf 'freeze=%s
-' "$WHEN"},
-          q{ENV=$(printf "TRUE|stage|Shared staging
-FALSE|prod|Production, hold onto your feelings
-FALSE|qa|Final dress rehearsal
-" | yad --list --radiolist --title="Target environment" --text="Where should this hotfix go first?" --column="Go:RD" --column="Environment" --column="Notes" --print-column=2); printf 'env=%s
-' "$ENV"},
-          q{SERVICES=$(printf "TRUE|api|Public API
-FALSE|worker|Background jobs
-FALSE|scheduler|Cron runner
-" | yad --list --checklist --title="Restart queue" --text="Pick services to restart after the config push:" --column="Do it:CHK" --column="Service" --column="Notes" --separator="," --print-column=2); printf 'restart=%s
-' "$SERVICES"},
-          q{printf "auth|Avery|100
-billing|Mia|65
-search|Theo|20
-" | yad --list --title="Rollout board" --text="What the rollout looks like from a safe distance" --column="Service" --column="Owner" --column="Progress:BAR"},
-          q{FORM=$(yad --form --title="Maintenance window" --text="Fill in the boring parts so production can stay exciting." --field="Title" --field="Owner:CB" --field="Start:DT" --field="Traffic %:SCL" --field="Runbook:FL" --date-format="%Y-%m-%d" --separator=" | "); printf '%s
-' "$FORM"},
-          q{FORM=$(yad --form --title="Incident handoff" --field="Summary" --field="Next steps:TXT" --separator=" | "); printf '%s
-' "$FORM"},
-          q{FILE=$(yad --file --title="Open release notes" --filename="$PWD/" --file-filter="Markdown files | *.md *.txt"); printf 'file=%s
-' "$FILE"},
-          q{DEST=$(yad --file --save --confirm-overwrite --title="Save migration report" --filename="$PWD/migration-report.md"); printf 'save=%s
-' "$DEST"},
-          q{DIR=$(yad --file --directory --title="Backup target" --filename="$HOME/"); printf 'dir=%s
-' "$DIR"},
-          q{PERCENT=$(yad --scale --title="Canary size" --text="Choose initial rollout percentage:" --min-value=1 --max-value=100 --step=1 --value=5 --mark=small:5 --mark=spicy:25); printf 'rollout=%s%%
-' "$PERCENT"},
-          q{COLOR=$(yad --color --title="Status color" --init-color="#E5A50A"); printf 'color=%s
-' "$COLOR"},
-          q{TMP=$(mktemp); printf "## Release notes
+          q{WHEN=$(yad --calendar --title="Freeze date" --text="Pick the code freeze date:" --date-format="%Y-%m-%d"); printf 'freeze=%s\n' "$WHEN"},
+          q{ENV=$(printf 'TRUE|stage|Shared staging\nFALSE|prod|Production, hold onto your feelings\nFALSE|qa|Final dress rehearsal\n' | yad --list --radiolist --title="Target environment" --text="Where should this hotfix go first?" --column="Go:RD" --column="Environment" --column="Notes" --print-column=2); printf 'env=%s\n' "$ENV"},
+          q{TBL=($(printf 'TRUE api Public API\nFALSE worker Background jobs\nFALSE scheduler Cron runner\n')); SERVICES=$(yad --list --checklist --title="Restart queue" --text="Pick services to restart after the config push:" --column="Do it:CHK" --column="Service" --column="Notes" --separator="," --print-column=2 "${TBL[@]}"); printf 'restart=%s\n' "$SERVICES"},
+          q{yad --list --title="Rollout board" --text="What the rollout looks like from a safe distance" --column="Service" --column="Owner" --column="Progress:BAR" $(printf 'auth Avery 100 billing Mia 65 search Theo 20')},
+          q{FORM=$(yad --form --title="Maintenance window" --text="Fill in the boring parts so production can stay exciting." --field="Title" --field="Owner:CB" --field="Start:DT" --field="Traffic %:SCL" --field="Runbook:FL" --date-format="%Y-%m-%d" --separator=" | "); printf '%s\n' "$FORM"},
+          q{FORM=$(yad --form --title="Incident handoff" --field="Summary" --field="Next steps:TXT" --separator=" | "); printf '%s\n' "$FORM"},
+          q{FILE=$(yad --file --title="Open release notes" --filename="$PWD/" --file-filter="Markdown files | *.md *.txt"); printf 'file=%s\n' "$FILE"},
+          q{DEST=$(yad --file --save --confirm-overwrite --title="Save migration report" --filename="$PWD/migration-report.md"); printf 'save=%s\n' "$DEST"},
+          q{DIR=$(yad --file --directory --title="Backup target" --filename="$HOME/"); printf 'dir=%s\n' "$DIR"},
+          q{PERCENT=$(yad --scale --title="Canary size" --text="Choose initial rollout percentage:" --min-value=1 --max-value=100 --step=1 --value=5 --mark=small:5 --mark=spicy:25); printf 'rollout=%s%%\n' "$PERCENT"},
+          q{COLOR=$(yad --color --title="Status color" --init-color="#E5A50A"); printf 'color=%s\n' "$COLOR"},
+          q{TMP=$(mktemp); printf '## Release notes
 
 - bump version
 - migrate prod
 - watch graphs like a hawk
-" > "$TMP"; yad --text-info --title="Release notes draft" --editable --filename="$TMP"; rm -f "$TMP"},
+' > "$TMP"; yad --text-info --title="Release notes draft" --editable --filename="$TMP"; rm -f "$TMP"},
           { cmd => q{TMP=$(mktemp); git log --oneline -n 20 > "$TMP"; yad --text-info --title="Recent commits" --filename="$TMP"; rm -f "$TMP"}, note => 'Only useful inside a git repo with some history.' },
           q{(echo "# Installing dependencies"; echo 15; sleep 1; echo "# Running tests"; echo 45; sleep 1; echo "# Building image"; echo 80; sleep 1; echo "# Done"; echo 100) | yad --progress --title="Build pipeline" --percentage=0 --auto-close --enable-log="Pipeline log"},
           q{find "$HOME" -maxdepth 2 -name '*.md' | yad --progress --pulsate --auto-close --title="Searching notes" --text="Scanning markdown files..."},
@@ -289,8 +268,8 @@ search|Theo|20
           q{gum file "$HOME/src"},
           q{gum spin --spinner dot --title "Running tests... please hold onto your feelings" -- sleep 4  # Ex: make test},
           q{gum spin --show-output --title "Building release artifact" -- sleep 4  # Ex: ./scripts/build-release.sh},
-          q{printf "service,owner,status\nauth,ana,green\nbilling,ben,yellow\nsearch,sam,red\n" | gum table | cut -d, -f1},
-          q{printf "name,eta,owner\nrelease-v1.8,2d,maya\ndb-cutover,5d,omar\noncall-rotation,1d,riley\n" | gum table},
+          q{printf 'service,owner,status\nauth,ana,green\nbilling,ben,yellow\nsearch,sam,red\n' | gum table --height 5 | cut -d, -f1},
+          q{printf 'name,eta,owner\nrelease-v1.8,2d,maya\ndb-cutover,5d,omar\noncall-rotation,1d,riley\n' | gum table --height 3 # Height can be smaller than items to scroll},
           q{gum style --border double --padding "1 2" --margin "1 0" --foreground 212 "Release captain" "Checklist armed and mildly caffeinated"},
           q{LEFT=$(gum style --border rounded --padding "1 2" "API" "p95: 182ms"); RIGHT=$(gum style --border rounded --padding "1 2" "Workers" "queue: 0"); gum join "$LEFT" "$RIGHT"},
           q{TOP=$(gum style --border rounded --padding "1 2" "Ship"); BOTTOM=$(gum style --border rounded --padding "1 2" "Observe"); gum join --vertical "$TOP" "$BOTTOM"},
@@ -587,3 +566,4 @@ while (1){
     }
   }
 }
+# vim: et ts=4 sts=2 sw=2
