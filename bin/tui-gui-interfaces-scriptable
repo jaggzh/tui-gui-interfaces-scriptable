@@ -304,7 +304,7 @@ search|Theo|20
           q{SERVICE=$(printf "auth\nbilling\nsearch\n" | gum choose --header "Tail logs for which service?"); gum log --level info "Pretending to tail logs" service "$SERVICE"},
           q{TASK=$(printf "Refactor cache invalidation\nWrite migration\nRename the variable called stuff\n" | gum choose --header "Pick today's dragon"); echo "Working on: $TASK"},
           q{printf "coffee\ntea\nthat one sparkling water nobody admits buying\n" | gum choose --no-limit --header "Office restock"},
-          { cmd => q{TMUX=$(tmux list-sessions -F \#S | gum filter --placeholder "Pick session..."); tmux switch-client -t "$TMUX" || tmux attach -t "$TMUX"}, note => 'Requires tmux and at least one session; inside tmux it switches, otherwise it tries to attach.' },
+          { cmd => q{TMUXSESS=$(tmux list-sessions -F \#S | gum filter --placeholder "Pick session..."); tmux switch-client -t "$TMUXSESS" || tmux attach -t "$TMUXSESS"}, note => 'Requires tmux and at least one session; inside tmux it switches, otherwise it tries to attach.' },
           q{ACTION=$(printf "ship\nrollback\nwalk away slowly\n" | gum choose --header "What now?"); echo "Action: $ACTION"},
         ],
         detect => 'gum',
