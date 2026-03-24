@@ -10,6 +10,11 @@ Allows you to pick and see some example outputs of different TUIs.
 
 This is a first version -- we definitely need more examples added to this thing.
 
+<div align="center">
+  <em>Example run...</em><br>
+  <img src="ss/ss1.png" alt="Example run"><br>
+</div>
+
 
 ## Credits
 
