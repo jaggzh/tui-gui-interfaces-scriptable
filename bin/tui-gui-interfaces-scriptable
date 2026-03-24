@@ -132,18 +132,48 @@ my $catalog = [
       },
       {
         name => 'gum',
-        blurb => 'modern terminal widgets (Go binary); fast to script.',
+        blurb => 'modern terminal widgets (Go binary); excellent for turning shell scripts into polished mini-workflows.',
         features => [
-          'input (with --password), write (multi-line), filter/choose',
-          'confirm, choose (single/multi), spin, progress, format (markdown)',
-          'style, table; great for composing interactive flows',
+          'input, write, confirm, choose, filter, and file pickers',
+          'style, join, table, pager, and format for pleasant terminal UIs',
+          'spin and log for long-running jobs and clearer feedback',
+          'great for git helpers, release flows, task runners, deploy prompts, and tiny ops tools',
         ],
         examples => [
-          q{gum input --placeholder "Type something"},
-          q{gum confirm "Proceed?" && echo yes || echo no},
-          q{printf "alpha\nbeta\ngamma\n" | gum choose},
-          q{printf "1\n2\n3\n" | gum filter},
-          q{gum input --password},
+          q{gum input --placeholder "Branch name (for the feature nobody will rename six times)"},
+          q{gum input --value "fix(auth): " --placeholder "Short commit summary"},
+          q{gum input --password --placeholder "Staging token"},
+          q{gum write --placeholder "Release notes, incident handoff, or the apology to future-you"},
+          q{gum confirm "Run database migrations?" && ./scripts/migrate.sh || echo "Probably wise."},
+          q{gum confirm "Deploy to production?" && ./scripts/deploy-prod.sh || echo "A thrilling commitment to caution."},
+          q{printf "dev\nstaging\nprod\n" | gum choose --header "Where should this go?"},
+          q{printf "lint\ntest\nbuild\nship-it\n" | gum choose --header "Pick a ritual"},
+          q{printf "frontend\nbackend\ninfra\nDX\n" | gum choose --no-limit --header "Which teams are involved?"},
+          q{git status --short | cut -c 4- | gum choose --no-limit --header "Stage which files?" | xargs git add},
+          q{git branch --format="%(refname:short)" | gum filter --placeholder "Checkout branch..." | xargs git checkout},
+          q{git log --oneline -n 30 | gum filter --placeholder "Find a commit to cherry-pick" | cut -d" " -f1},
+          q{printf "P1 checkout bug\nP2 flaky test\nP3 docs typo\n" | gum filter --placeholder "What are we fixing first?"},
+          q{$EDITOR "$(gum file .)"},
+          q{gum file "$HOME/src"},
+          q{gum spin --spinner dot --title "Running tests... please hold onto your feelings" -- make test},
+          q{gum spin --show-output --title "Building release artifact" -- ./scripts/build-release.sh},
+          q{printf "service,owner,status\nauth,ana,green\nbilling,ben,yellow\nsearch,sam,red\n" | gum table | cut -d, -f1},
+          q{printf "name,eta,owner\nrelease-v1.8,2d,maya\ndb-cutover,5d,omar\noncall-rotation,1d,riley\n" | gum table},
+          q{gum style --border double --padding "1 2" --margin "1 0" --foreground 212 "Release captain" "Checklist armed and mildly caffeinated"},
+          q{LEFT=$(gum style --border rounded --padding "1 2" "API" "p95: 182ms"); RIGHT=$(gum style --border rounded --padding "1 2" "Workers" "queue: 0"); gum join "$LEFT" "$RIGHT"},
+          q{TOP=$(gum style --border rounded --padding "1 2" "Ship"); BOTTOM=$(gum style --border rounded --padding "1 2" "Observe"); gum join --vertical "$TOP" "$BOTTOM"},
+          q{printf "# Incident notes\n- Customer impact: low\n- Fix: config rollback\n- Follow-up: add alarm\n" | gum format},
+          q{printf "I :coffee: shell scripts and :warning: surprise Fridays" | gum format -t emoji},
+          q{printf "#!/usr/bin/env bash\necho hello\n" | gum format -t code},
+          q{gum pager < README.md},
+          q{git diff --stat | gum pager},
+          q{gum log --level info "Starting backup"},
+          q{gum log --structured --level warn "High error rate detected" service api env prod},
+          q{SERVICE=$(printf "auth\nbilling\nsearch\n" | gum choose --header "Tail logs for which service?"); gum log --level info "Pretending to tail logs" service "$SERVICE"},
+          q{TASK=$(printf "Refactor cache invalidation\nWrite migration\nRename the variable called stuff\n" | gum choose --header "Pick today's dragon"); echo "Working on: $TASK"},
+          q{printf "coffee\ntea\nthat one sparkling water nobody admits buying\n" | gum choose --no-limit --header "Office restock"},
+          q{TMUX=$(tmux list-sessions -F \#S | gum filter --placeholder "Pick session..."); tmux switch-client -t "$TMUX" || tmux attach -t "$TMUX"},
+          q{ACTION=$(printf "ship\nrollback\nwalk away slowly\n" | gum choose --header "What now?"); echo "Action: $ACTION"},
         ],
         detect => 'gum',
       },
@@ -223,7 +253,7 @@ sub list_items($sec){
     say "   Features: " . join("; ", @{$$it{features}});
     $i++;
   }
-  say "${clrsel}q$clrsep.$rst Back";
+  say "${clrsel}ENTER$clrsep.$rst Back";
 }
 
 sub list_examples($it){
@@ -233,19 +263,19 @@ sub list_examples($it){
     say "$clrsel$i$clrsep)$rst $ex";
     $i++;
   }
-  say "${clrsel}q$clrsep)$rst Back";
+  say "${clrsel}ENTER$clrsep)$rst Back";
 }
 
 sub prompt($msg){
-  print "$whi$msg$rst ";
+  print "$yel$msg$rst ";
   chomp( my $ans = <STDIN> // '' );
   return $ans;
 }
 
 sub run_cmd($cmd){
   say "\n\$ $clrcmd$cmd$rst";
-  system($cmd);
-  say "\n[exit=$?]  (Press Enter)";
+  system('bash', '-c', $cmd);
+  say "\n[exit code:$?]  (Press Enter)";
   scalar <STDIN>;
 }
 
@@ -259,15 +289,15 @@ while (1){
   my $sec = $$catalog[$s-1];
   while (1){
     list_items($sec);
-    my $i = prompt("Pick a tool to drill into:");
-    last if ($i//'') eq 'q';
+    my $i = prompt("Pick a tool to try examples:");
+    last if ($i//'') eq '';
     next if $i !~ /^\d+$/ || $i < 1 || $i > @{$$sec{items}};
 
     my $it = $$sec{items}[$i-1];
     while (1){
       list_examples($it);
       my $e = prompt("Run which example?");
-      last if ($e//'') eq '0';
+      last if ($e//'') eq '';
       next if $e !~ /^\d+$/ || $e < 1 || $e > @{$$it{examples}};
       my $cmd = $$it{examples}[$e-1];
       if (!have($$it{detect})){
