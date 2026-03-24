@@ -1,0 +1,281 @@
+#!/usr/bin/env perl
+use v5.36;
+use bansi;
+
+# Quick-pick UI helpers for Debian/KDE projects
+# - Sections: GUI / TUI / GUI-Application-Launcher
+# - Sorted by robustness in each section
+# - Shows concise feature overviews and runnable one-line examples
+#
+# Hints:
+# - Press the number to drill in; press the example number to run it
+# - We try to detect whether a tool is installed and annotate the list
+# - Uses `//` for definedness, and "$$href{k}" style where needed
+
+my $clrcmd = $bcya;
+my $clrsel = $bcya;
+my $clrsep = $yel;
+my $clrhead = $whi;
+my $clrname = $whi;
+my $clrprompt = $whi;
+my $clrnotinst = $yel;
+
+# ---------- data ----------
+my $catalog = [
+  {
+    section => 'GUI',
+    items => [
+      {
+        name => 'kdialog',
+        blurb => 'Qt/KDE-native dialogs (great KDE integration).',
+        features => [
+          'Input, password, message/sorry/error',
+          'Yes/No/Cancel questions with custom labels',
+          'Lists (menu/combobox, radio, checklist)',
+          'File/dir open & save, URL selectors, icon chooser',
+          'Progressbar via D-Bus ref, slider, color, calendar',
+          'Passive popups, attach to window, geometry',
+        ],
+        examples => [
+          'kdialog --msgbox \'Hello\nyou\' \'Long details, collapsed.\'',
+          'kdialog --msgbox \'<qt><b>Hello</b> html</qt>\'',
+          'kdialog --inputbox "Enter something:" "default"',
+          'kdialog --yesno "Proceed with action?" && echo OK || echo Cancel',
+          'kdialog --calendar "Pick a date" --dateformat "%Y-%m-%d"',
+          'kdialog --combobox "Choose one:" foo bar baz --default bar',
+          'kdialog --progressbar "Working..." & sleep 1; qdbus $$! /ProgressDialog close 2>/dev/null',
+          'kdialog --password "Enter password:"',
+
+        ],
+        detect => 'kdialog',
+      },
+      {
+        name => 'yad',
+        blurb => 'GTK dialogs; very feature-rich fork of zenity.',
+        features => [
+          'Entry, password, multi-line text (write/editable)',
+          'Form builder (fields: entry, password, list, date, color, file, scale, buttons, etc.)',
+          'List/tree with check/radio/img/progress columns; dblclick/select actions',
+          'Calendar, color, font, file/dir, notifications (tray icon)',
+          'Progress & multiprogress, HTML viewer, icons grid, notebook/tabs, paned',
+          'Window controls: placement, keep-on-top, undecorated, timeout',
+        ],
+        examples => [
+          q{yad --entry --title="Quick Entry" --text="Type something:"},
+          q{yad --question --text="Continue?" && echo yes || echo no},
+          q{yad --calendar --date-format="%Y-%m-%d"},
+          q{printf "Buy|Item\nTRUE|Apples\nFALSE|Pears\n" | yad --list --checklist --column="Buy:CHK" --column="Item"},
+          q{yad --form --field="Name" --field="When:DT" --field="Pick:CLR" --field="File:FL" --separator=" | "},
+          q{yad --entry --hide-text --text="Enter password:"},
+        ],
+        detect => 'yad',
+      },
+      {
+        name => 'zenity',
+        blurb => 'GTK dialogs; stable, simple, widely available.',
+        features => [
+          'Entry/password, info/warning/error/question',
+          'Calendar, color, scale',
+          'File selection (open/save), list (multi, radio/check), text-info (editable)',
+          'Forms (entries, password, calendar, list, combo)',
+          'Notification bubble, progress (pulsate/auto-close)',
+        ],
+        examples => [
+          q{zenity --entry --text="Your name?" --entry-text="Alice"},
+          q{zenity --question --text="Run the job?" && echo yes || echo no},
+          q{zenity --calendar --date-format="%Y-%m-%d"},
+          q{printf "One|Two|Three\n" | awk -F"|" \'{print $1"\n"$2"\n"$3}\' | zenity --list --column="Pick" --multiple --separator=", "},
+          q{zenity --forms --text="Create task" --add-entry="Title" --add-calendar="Due" --add-combo="Priority" --combo-values="Low|Med|High"},
+          q{zenity --password},
+        ],
+        detect => 'zenity',
+      },
+    ],
+  },
+
+  {
+    section => 'TUI',
+    items => [
+      {
+        name => 'dialog',
+        blurb => 'ncurses dialogs; very complete widget set for terminals/SSH.',
+        features => [
+          'Inputbox, passwordbox, msgbox, yesno, infobox',
+          'Menu, radiolist, checklist, fselect/dirselect',
+          'Textbox (with search), gauge (progress), calendar, timebox',
+          'Forms, mixedlist, tailbox, buildlist, rangebox',
+        ],
+        examples => [
+          q{dialog --inputbox "Enter value:" 8 40 2> >(read a; echo "$a" >&2)},
+          q{dialog --yesno "Proceed?" 7 40; echo $?},
+          q{dialog --calendar "Pick a date" 0 0 2> >(read d; echo "$d" >&2)},
+          q{dialog --checklist "Select items" 15 50 5 1 Foo off 2 Bar on 3 Baz off 2> >(cat >&2)},
+          q{dialog --passwordbox "Enter your password:" 8 40 2> /tmp/pass},
+        ],
+        detect => 'dialog',
+      },
+      {
+        name => 'whiptail',
+        blurb => 'lightweight dialog clone; often preinstalled on Debian/derivatives.',
+        features => [
+          'Inputbox, msgbox, yesno, infobox',
+          'Menu, radiolist, checklist',
+          'Textbox, gauge (progress)',
+        ],
+        examples => [
+          q{whiptail --inputbox "Your name:" 8 40 --title "Hello" 3>&1 1>&2 2>&3},
+          q{whiptail --yesno "Continue?" 7 40; echo $?},
+          q{whiptail --checklist "Pick" 15 70 4 "apples" "The fruit." OFF "pears" "Like apples, except they're made of pair." ON 3>&1 1>&2 2>&3},
+          q{whiptail --passwordbox "please enter your secret password" 8 78 --title "password dialog" 3>&1 1>&2 2>&3},
+        ],
+        detect => 'whiptail',
+      },
+      {
+        name => 'gum',
+        blurb => 'modern terminal widgets (Go binary); fast to script.',
+        features => [
+          'input (with --password), write (multi-line), filter/choose',
+          'confirm, choose (single/multi), spin, progress, format (markdown)',
+          'style, table; great for composing interactive flows',
+        ],
+        examples => [
+          q{gum input --placeholder "Type something"},
+          q{gum confirm "Proceed?" && echo yes || echo no},
+          q{printf "alpha\nbeta\ngamma\n" | gum choose},
+          q{printf "1\n2\n3\n" | gum filter},
+          q{gum input --password},
+        ],
+        detect => 'gum',
+      },
+    ],
+  },
+
+  {
+    section => 'GUI-Application-Launcher',
+    items => [
+      {
+        name => 'rofi',
+        blurb => 'robust X11/Wayland launcher; powerful -dmenu mode.',
+        features => [
+          'Run/ssh/window/file modi; themeable',
+          'dmenu mode for scriptable prompts (stdin list → stdout selection)',
+          'Type-to-filter, multi-select, custom keybindings, plugins',
+        ],
+        examples => [
+          q{printf "build\nrun\ntest\n" | rofi -dmenu -p "Action"},
+          q{rofi -show run},
+          q{printf "apple\nbanana\ncherry\n" | rofi -dmenu -multi-select -p "Pick"},
+        ],
+        detect => 'rofi',
+      },
+      {
+        name => 'wofi',
+        blurb => 'Wayland (wlroots) launcher; has dmenu mode.',
+        features => [
+          'Wayland-native with CSS theming',
+          'dmenu mode (stdin list → stdout choice)',
+          'Normal window fallback if compositor lacks layer-shell',
+        ],
+        examples => [
+          q{printf "one\ntwo\nthree\n" | wofi --show dmenu},
+          q{wofi --show run},
+        ],
+        detect => 'wofi',
+      },
+      {
+        name => 'dmenu',
+        blurb => 'ultra-minimal X11 dmenu; blazing fast text prompt.',
+        features => [
+          'stdin list → interactive filter → stdout selection',
+          'Script-friendly; tiny deps; often bound to hotkeys',
+        ],
+        examples => [
+          q{printf "alpha\nbeta\ngamma\n" | dmenu -p "Pick"},
+          q{cmd=$(printf "xterm\nkonsole\nkate\n" | dmenu -p "Launch"); [ -n "$cmd" ] && $cmd &},
+        ],
+        detect => 'dmenu',
+      },
+    ],
+  },
+];
+
+# ---------- helpers ----------
+sub have($cmd) { system("command -v $cmd >/dev/null 2>&1") == 0; }
+
+sub header($t){ say "\n== $clrhead$t$rst ==" }
+
+sub list_sections($data){
+  say "Sections:";
+  my $i = 1;
+  for my $sec (@$data){
+    say "$clrsel$i$clrsep.$rst $$sec{section}";
+    $i++;
+  }
+  say "${clrsel}q$clrsep.$rst Exit";
+}
+
+sub list_items($sec){
+  header $$sec{section};
+  my $i = 1;
+  for my $it (@{$$sec{items}}){
+    my $installed = have($$it{detect}) ? "" : " $clrnotinst(not installed)$rst";
+    say "$clrsel$i$clrsep.$rst $clrname$$it{name}$rst$installed: $$it{blurb}";
+    say "   Features: " . join("; ", @{$$it{features}});
+    $i++;
+  }
+  say "${clrsel}q$clrsep.$rst Back";
+}
+
+sub list_examples($it){
+  header "$$it{name} — examples";
+  my $i = 1;
+  for my $ex (@{$$it{examples}}){
+    say "$clrsel$i$clrsep)$rst $ex";
+    $i++;
+  }
+  say "${clrsel}q$clrsep)$rst Back";
+}
+
+sub prompt($msg){
+  print "$whi$msg$rst ";
+  chomp( my $ans = <STDIN> // '' );
+  return $ans;
+}
+
+sub run_cmd($cmd){
+  say "\n\$ $clrcmd$cmd$rst";
+  system($cmd);
+  say "\n[exit=$?]  (Press Enter)";
+  scalar <STDIN>;
+}
+
+# ---------- UI flow ----------
+while (1){
+  list_sections($catalog);
+  my $s = prompt("Pick a section number:");
+  exit 0 if ($s//'') eq 'q';
+  next if $s !~ /^\d+$/ || $s < 1 || $s > @$catalog;
+
+  my $sec = $$catalog[$s-1];
+  while (1){
+    list_items($sec);
+    my $i = prompt("Pick a tool to drill into:");
+    last if ($i//'') eq 'q';
+    next if $i !~ /^\d+$/ || $i < 1 || $i > @{$$sec{items}};
+
+    my $it = $$sec{items}[$i-1];
+    while (1){
+      list_examples($it);
+      my $e = prompt("Run which example?");
+      last if ($e//'') eq '0';
+      next if $e !~ /^\d+$/ || $e < 1 || $e > @{$$it{examples}};
+      my $cmd = $$it{examples}[$e-1];
+      if (!have($$it{detect})){
+        say "\n[$$it{name} not installed] Try: sudo apt install $$it{detect}";
+        scalar <STDIN>;
+        next;
+      }
+      run_cmd($cmd);
+    }
+  }
+}
