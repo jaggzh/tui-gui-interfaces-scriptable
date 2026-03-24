@@ -24,3 +24,7 @@ This is a first version -- we definitely need more examples added to this thing.
 ## Credits
 
 *jaggz.h {who is at} gmail.com*
+
+## Links
+
+[![Hypercommit](https://img.shields.io/badge/Hypercommit-DB2475)](https://hypercommit.com/tui-gui-interfaces-scriptable)
