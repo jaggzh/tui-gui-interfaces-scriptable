@@ -15,6 +15,11 @@ This is a first version -- we definitely need more examples added to this thing.
   <img src="ss/ss1.png" alt="Example run"><br>
 </div>
 
+<div align="center">
+  <em>Example GUI calendar preview with yad...</em><br>
+  <img src="ss/ss-gui.png" alt="Example GUI calendar"><br>
+</div>
+
 
 ## Credits
 
