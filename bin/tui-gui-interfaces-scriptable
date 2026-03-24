@@ -1,6 +1,36 @@
 #!/usr/bin/env perl
 use v5.36;
-use bansi;
+
+# Built-in ANSI color palette; no external color module required.
+# Reset also clears bold/bright state.
+my $rst  = "\e[0m";
+
+# base colors
+my $red  = "\e[31m";
+my $gre  = "\e[32m";
+my $bro  = "\e[33m";
+my $blu  = "\e[34m";
+my $mag  = "\e[35m";
+my $cya  = "\e[36m";
+my $gra  = "\e[90m";
+
+# bright/bold colors
+my $bred = "\e[31;1m";
+my $bgre = "\e[32;1m";
+my $yel  = "\e[33;1m";   # bright brown/yellow
+my $bblu = "\e[34;1m";
+my $bmag = "\e[35;1m";
+my $bcya = "\e[36;1m";
+my $whi  = "\e[37;1m";   # bright gray/white
+
+# background colors (base palette names)
+my $bgred = "\e[41m";
+my $bggre = "\e[42m";
+my $bgbro = "\e[43m";
+my $bgblu = "\e[44m";
+my $bgmag = "\e[45m";
+my $bgcya = "\e[46m";
+my $bggra = "\e[100m";
 
 # Quick-pick UI helpers for Debian/KDE projects
 # - Sections: GUI / TUI / GUI-Application-Launcher
@@ -9,6 +39,7 @@ use bansi;
 #
 # Hints:
 # - Press the number to drill in; press the example number to run it
+# - In example lists, cN copies example N to the clipboard, x toggles xsel/xclip, and xN copies example N to all X selections
 # - We try to detect whether a tool is installed and annotate the list
 # - Uses `//` for definedness, and "$$href{k}" style where needed
 
@@ -19,6 +50,11 @@ my $clrhead = $whi;
 my $clrname = $whi;
 my $clrprompt = $whi;
 my $clrnotinst = $yel;
+
+my $has_xclip = 0;
+my $has_xsel  = 0;
+my $cb_bin;
+
 
 # ---------- data ----------
 my $catalog = [
@@ -49,7 +85,7 @@ my $catalog = [
           q!FILE=$(kdialog --title "Open release notes" --getopenfilename :release-notes "*.md *.txt"); printf 'file=%s\n' "$FILE"!,
           q!DEST=$(kdialog --title "Save migration report" --getsavefilename :reports "Markdown (*.md)"); printf 'save=%s\n' "$DEST"!,
           q!DIR=$(kdialog --title "Backup target" --getexistingdirectory :backups); printf 'dir=%s\n' "$DIR"!,
-          q!kdialog --title "Review checklist" --textbox README.md 720 500!,
+          { cmd => q!kdialog --title "Review checklist" --textbox README.md 720 500!, note => 'Expects README.md in the current directory.' },
           q!kdialog --title "Sync" --passivepopup "Dependencies are up to date. Nobody panic." 5!,
           q!kdialog --dontagain deploy-helper:missing-secrets --sorry "Missing .env.production. Lovely. Please generate it first."!,
           q!QDBUS=$(command -v qdbus || command -v qdbus-qt5); DBUS_REF=$(kdialog --title "Release helper" --progressbar "Warming up the tiny release goblins" 4); "$QDBUS" "$DBUS_REF" Set "" value 1; "$QDBUS" "$DBUS_REF" setLabelText "Building assets"; sleep 1; "$QDBUS" "$DBUS_REF" Set "" value 2; "$QDBUS" "$DBUS_REF" setLabelText "Uploading bundle"; sleep 1; "$QDBUS" "$DBUS_REF" Set "" value 3; "$QDBUS" "$DBUS_REF" setLabelText "Flipping canary"; sleep 1; "$QDBUS" "$DBUS_REF" Set "" value 4; "$QDBUS" "$DBUS_REF" close!,
@@ -60,22 +96,66 @@ my $catalog = [
       },
       {
         name => 'yad',
-        blurb => 'GTK dialogs; very feature-rich fork of zenity.',
+        blurb => 'GTK dialogs; the feature-monster cousin that somehow still fits comfortably in shell scripts.',
         features => [
-          'Entry, password, multi-line text (write/editable)',
-          'Form builder (fields: entry, password, list, date, color, file, scale, buttons, etc.)',
-          'List/tree with check/radio/img/progress columns; dblclick/select actions',
-          'Calendar, color, font, file/dir, notifications (tray icon)',
-          'Progress & multiprogress, HTML viewer, icons grid, notebook/tabs, paned',
-          'Window controls: placement, keep-on-top, undecorated, timeout',
+          'Entry/password, question/info flows, and editable text views',
+          'Very capable forms with entry, combo, date, file, directory, scale, color, and multiline fields',
+          'Lists with check/radio/progress/image columns plus print-column control',
+          'File and directory pickers, calendar, color/font selection, HTML view, and notifications',
+          'Progress and multi-progress dialogs, plus notebook/paned composition for bigger shells',
+          'A good fit when zenity feels a little too restrained and you still want GTK-native output',
         ],
         examples => [
-          q{yad --entry --title="Quick Entry" --text="Type something:"},
-          q{yad --question --text="Continue?" && echo yes || echo no},
-          q{yad --calendar --date-format="%Y-%m-%d"},
-          q{printf "Buy|Item\nTRUE|Apples\nFALSE|Pears\n" | yad --list --checklist --column="Buy:CHK" --column="Item"},
-          q{yad --form --field="Name" --field="When:DT" --field="Pick:CLR" --field="File:FL" --separator=" | "},
-          q{yad --entry --hide-text --text="Enter password:"},
+          q{TAG=$(yad --entry --title="Release helper" --text="Release tag to ship:" --entry-text="v1.24.0"); printf 'tag=%s
+' "$TAG"},
+          q{TOKEN=$(yad --entry --hide-text --title="Registry token" --text="Paste the temporary access token:"); printf 'token length: %s
+' "${#TOKEN}"},
+          q{yad --question --title="Ship it?" --text="Promote staging to production?" --button="Ship it:0" --button="Not today:1" && echo "deploying" || echo "standing down"},
+          q{WHEN=$(yad --calendar --title="Freeze date" --text="Pick the code freeze date:" --date-format="%Y-%m-%d"); printf 'freeze=%s
+' "$WHEN"},
+          q{ENV=$(printf "TRUE|stage|Shared staging
+FALSE|prod|Production, hold onto your feelings
+FALSE|qa|Final dress rehearsal
+" | yad --list --radiolist --title="Target environment" --text="Where should this hotfix go first?" --column="Go:RD" --column="Environment" --column="Notes" --print-column=2); printf 'env=%s
+' "$ENV"},
+          q{SERVICES=$(printf "TRUE|api|Public API
+FALSE|worker|Background jobs
+FALSE|scheduler|Cron runner
+" | yad --list --checklist --title="Restart queue" --text="Pick services to restart after the config push:" --column="Do it:CHK" --column="Service" --column="Notes" --separator="," --print-column=2); printf 'restart=%s
+' "$SERVICES"},
+          q{printf "auth|Avery|100
+billing|Mia|65
+search|Theo|20
+" | yad --list --title="Rollout board" --text="What the rollout looks like from a safe distance" --column="Service" --column="Owner" --column="Progress:BAR"},
+          q{FORM=$(yad --form --title="Maintenance window" --text="Fill in the boring parts so production can stay exciting." --field="Title" --field="Owner:CB" --field="Start:DT" --field="Traffic %:SCL" --field="Runbook:FL" --date-format="%Y-%m-%d" --separator=" | "); printf '%s
+' "$FORM"},
+          q{FORM=$(yad --form --title="Incident handoff" --field="Summary" --field="Next steps:TXT" --separator=" | "); printf '%s
+' "$FORM"},
+          q{FILE=$(yad --file --title="Open release notes" --filename="$PWD/" --file-filter="Markdown files | *.md *.txt"); printf 'file=%s
+' "$FILE"},
+          q{DEST=$(yad --file --save --confirm-overwrite --title="Save migration report" --filename="$PWD/migration-report.md"); printf 'save=%s
+' "$DEST"},
+          q{DIR=$(yad --file --directory --title="Backup target" --filename="$HOME/"); printf 'dir=%s
+' "$DIR"},
+          q{PERCENT=$(yad --scale --title="Canary size" --text="Choose initial rollout percentage:" --min-value=1 --max-value=100 --step=1 --value=5 --mark=small:5 --mark=spicy:25); printf 'rollout=%s%%
+' "$PERCENT"},
+          q{COLOR=$(yad --color --title="Status color" --init-color="#E5A50A"); printf 'color=%s
+' "$COLOR"},
+          q{TMP=$(mktemp); printf "## Release notes
+
+- bump version
+- migrate prod
+- watch graphs like a hawk
+" > "$TMP"; yad --text-info --title="Release notes draft" --editable --filename="$TMP"; rm -f "$TMP"},
+          { cmd => q{TMP=$(mktemp); git log --oneline -n 20 > "$TMP"; yad --text-info --title="Recent commits" --filename="$TMP"; rm -f "$TMP"}, note => 'Only useful inside a git repo with some history.' },
+          q{(echo "# Installing dependencies"; echo 15; sleep 1; echo "# Running tests"; echo 45; sleep 1; echo "# Building image"; echo 80; sleep 1; echo "# Done"; echo 100) | yad --progress --title="Build pipeline" --percentage=0 --auto-close --enable-log="Pipeline log"},
+          q{find "$HOME" -maxdepth 2 -name '*.md' | yad --progress --pulsate --auto-close --title="Searching notes" --text="Scanning markdown files..."},
+          q{(printf 'tooltip:Build queued
+'; sleep 1; printf 'tooltip:Tests passed
+'; sleep 1; printf 'tooltip:Rolling out canary
+'; sleep 1; printf 'quit
+') | yad --notification --listen --text="Deploy helper"},
+          q{printf '<h1>Rollback playbook</h1><p>1. Stop traffic</p><p>2. Restore previous image</p><p>3. Verify metrics</p>' | yad --html --title="Runbook preview"},
         ],
         detect => 'yad',
       },
@@ -103,7 +183,7 @@ my $catalog = [
           q!FORM=$(zenity --forms --title="Create maintenance window" --text="Fill in the boring parts so production can stay exciting." --add-entry="Title" --add-entry="Owner" --add-calendar="Start date" --forms-date-format="%Y-%m-%d" --separator=" | "); printf '%s\n' "$FORM"!,
           q!CREDS=$(zenity --password --title="Registry login" --username); printf '%s\n' "$CREDS"!,
           q!TMP=$(mktemp); printf "## Release notes\n\n- bump version\n- migrate prod\n- watch graphs like a hawk\n" > "$TMP"; zenity --text-info --title="Release notes draft" --editable --filename="$TMP"; rm -f "$TMP"!,
-          q!TMP=$(mktemp); git log --oneline -n 20 > "$TMP"; zenity --text-info --title="Recent commits" --filename="$TMP"; rm -f "$TMP"!,
+          { cmd => q!TMP=$(mktemp); git log --oneline -n 20 > "$TMP"; zenity --text-info --title="Recent commits" --filename="$TMP"; rm -f "$TMP"!, note => 'Only useful inside a git repo with some history.' },
           q!(echo 10; echo "# Installing dependencies"; sleep 1; echo 45; echo "# Running tests"; sleep 1; echo 75; echo "# Building image"; sleep 1; echo 100; echo "# Done") | zenity --progress --title="Build pipeline" --text="Starting..." --percentage=0 --auto-close!,
           q!(sleep 3) | zenity --progress --pulsate --auto-close --no-cancel --text="Waiting for the cluster to stop being dramatic..."!,
           q!zenity --notification --window-icon=info --text="Deploy finished. Go collect your cautious optimism."!,
@@ -201,14 +281,14 @@ my $catalog = [
           q{printf "dev\nstaging\nprod\n" | gum choose --header "Where should this go?"},
           q{printf "lint\ntest\nbuild\nship-it\n" | gum choose --header "Pick a ritual"},
           q{printf "frontend\nbackend\ninfra\nDX\n" | gum choose --no-limit --header "Which teams are involved?"},
-          q{git status --short | cut -c 4- | gum choose --no-limit --header "Stage which files?" | xargs git add},
-          q{git branch --format="%(refname:short)" | gum filter --placeholder "Checkout branch..." | xargs git checkout},
-          q{git log --oneline -n 30 | gum filter --placeholder "Find a commit to cherry-pick" | cut -d" " -f1},
+          { cmd => q{git status --short | cut -c 4- | gum choose --no-limit --header "Stage which files?" | xargs git add}, note => 'Only functions inside a git repo, and it is nicer when there is actually something to stage.' },
+          { cmd => q{git branch --format="%(refname:short)" | gum filter --placeholder "Checkout branch..." | xargs git checkout}, note => 'Only functions inside a git repo with at least one local branch; more branches make it worthwhile.' },
+          { cmd => q{git log --oneline -n 30 | gum filter --placeholder "Find a commit to cherry-pick" | cut -d" " -f1}, note => 'Only useful inside a git repo with commit history.' },
           q{printf "P1 checkout bug\nP2 flaky test\nP3 docs typo\n" | gum filter --placeholder "What are we fixing first?"},
           q{$EDITOR "$(gum file .)"},
           q{gum file "$HOME/src"},
-          q{gum spin --spinner dot --title "Running tests... please hold onto your feelings" -- make test},
-          q{gum spin --show-output --title "Building release artifact" -- ./scripts/build-release.sh},
+          q{gum spin --spinner dot --title "Running tests... please hold onto your feelings" -- sleep 4  # Ex: make test},
+          q{gum spin --show-output --title "Building release artifact" -- sleep 4  # Ex: ./scripts/build-release.sh},
           q{printf "service,owner,status\nauth,ana,green\nbilling,ben,yellow\nsearch,sam,red\n" | gum table | cut -d, -f1},
           q{printf "name,eta,owner\nrelease-v1.8,2d,maya\ndb-cutover,5d,omar\noncall-rotation,1d,riley\n" | gum table},
           q{gum style --border double --padding "1 2" --margin "1 0" --foreground 212 "Release captain" "Checklist armed and mildly caffeinated"},
@@ -217,14 +297,14 @@ my $catalog = [
           q{printf "# Incident notes\n- Customer impact: low\n- Fix: config rollback\n- Follow-up: add alarm\n" | gum format},
           q{printf "I :coffee: shell scripts and :warning: surprise Fridays" | gum format -t emoji},
           q{printf "#!/usr/bin/env bash\necho hello\n" | gum format -t code},
-          q{gum pager < README.md},
-          q{git diff --stat | gum pager},
+          { cmd => q{gum pager < README.md}, note => 'Expects README.md in the current directory.' },
+          { cmd => q{git diff --stat | gum pager}, note => 'Only useful inside a git repo.' },
           q{gum log --level info "Starting backup"},
           q{gum log --structured --level warn "High error rate detected" service api env prod},
           q{SERVICE=$(printf "auth\nbilling\nsearch\n" | gum choose --header "Tail logs for which service?"); gum log --level info "Pretending to tail logs" service "$SERVICE"},
           q{TASK=$(printf "Refactor cache invalidation\nWrite migration\nRename the variable called stuff\n" | gum choose --header "Pick today's dragon"); echo "Working on: $TASK"},
           q{printf "coffee\ntea\nthat one sparkling water nobody admits buying\n" | gum choose --no-limit --header "Office restock"},
-          q{TMUX=$(tmux list-sessions -F \#S | gum filter --placeholder "Pick session..."); tmux switch-client -t "$TMUX" || tmux attach -t "$TMUX"},
+          { cmd => q{TMUX=$(tmux list-sessions -F \#S | gum filter --placeholder "Pick session..."); tmux switch-client -t "$TMUX" || tmux attach -t "$TMUX"}, note => 'Requires tmux and at least one session; inside tmux it switches, otherwise it tries to attach.' },
           q{ACTION=$(printf "ship\nrollback\nwalk away slowly\n" | gum choose --header "What now?"); echo "Action: $ACTION"},
         ],
         detect => 'gum',
@@ -308,53 +388,199 @@ sub list_items($sec){
   say "${clrsel}ENTER$clrsep.$rst Back";
 }
 
+sub ex_cmd($ex){
+  return ref($ex) eq 'HASH' ? $$ex{cmd} : $ex;
+}
+
+sub ex_note($ex){
+  return ref($ex) eq 'HASH' ? ($$ex{note} // '') : '';
+}
+
+sub detect_clipboard_tools(){
+  $has_xclip = have('xclip') ? 1 : 0;
+  $has_xsel  = have('xsel')  ? 1 : 0;
+
+  if (!defined $cb_bin) {
+    $cb_bin = $has_xsel ? 'xsel' : $has_xclip ? 'xclip' : undef;
+    return;
+  }
+
+  if ($cb_bin eq 'xsel' && !$has_xsel) {
+    $cb_bin = $has_xclip ? 'xclip' : undef;
+    return;
+  }
+
+  if ($cb_bin eq 'xclip' && !$has_xclip) {
+    $cb_bin = $has_xsel ? 'xsel' : undef;
+    return;
+  }
+}
+
+sub clipboard_backend(){
+  return $cb_bin;
+}
+
+sub clipboard_backend_label($name){
+  return $name ? "$whi$name$rst" : "${yel}none$rst";
+}
+
+sub clipboard_tool_status($name){
+  return "${yel}not installed$rst" if !$name || !have($name);
+  return clipboard_backend() && clipboard_backend() eq $name
+    ? "${bgre}active$rst"
+    : "${gre}available$rst";
+}
+
+sub toggle_clipboard_backend(){
+  detect_clipboard_tools();
+
+  if (!$has_xclip && !$has_xsel) {
+    return (0, "Neither xclip nor xsel are installed. Copy to clipboard won't function (try mouse selection/RMB)");
+  }
+
+  if ($cb_bin && $cb_bin eq 'xsel') {
+    return (0, 'Sorry, xclip was not found on your system.') if !$has_xclip;
+    $cb_bin = 'xclip';
+    return (1, 'Clipboard backend set to xclip.');
+  }
+
+  if ($cb_bin && $cb_bin eq 'xclip') {
+    return (0, 'Sorry, xsel was not found on your system.') if !$has_xsel;
+    $cb_bin = 'xsel';
+    return (1, 'Clipboard backend set to xsel.');
+  }
+
+  $cb_bin = $has_xsel ? 'xsel' : 'xclip';
+  return (1, "Clipboard backend set to $cb_bin.");
+}
+
+sub copy_text($text, $mode='clipboard', $backend=undef){
+  detect_clipboard_tools();
+  $backend //= clipboard_backend();
+  return (0, "Neither xclip nor xsel are installed. Copy to clipboard won't function (try mouse selection/RMB)") if !$backend;
+  return (0, 'Sorry, xclip was not found on your system.') if $backend eq 'xclip' && !$has_xclip;
+  return (0, 'Sorry, xsel was not found on your system.')  if $backend eq 'xsel'  && !$has_xsel;
+
+  if ($mode eq 'all') {
+    my @done;
+    for my $sel (qw(primary secondary clipboard)) {
+      my ($ok, undef) = copy_text($text, $sel, $backend);
+      push @done, $sel if $ok;
+    }
+    return @done ? (1, "$backend → " . join(', ', @done)) : (0, "$backend copy failed");
+  }
+
+  if ($backend eq 'xclip') {
+    open my $fh, '|-', 'xclip', '-selection', $mode or return (0, 'failed to start xclip');
+    print {$fh} $text;
+    close $fh;
+    return ($? == 0, "$backend → $mode");
+  }
+
+  if ($backend eq 'xsel') {
+    my %opt = (
+      primary   => '-p',
+      secondary => '-s',
+      clipboard => '-b',
+    );
+    open my $fh, '|-', 'xsel', '--input', ($opt{$mode} // '-b') or return (0, 'failed to start xsel');
+    print {$fh} $text;
+    close $fh;
+    return ($? == 0, "$backend → $mode");
+  }
+
+  return (0, 'no clipboard backend available');
+}
+
+sub show_message($msg){
+  say "
+[$msg]  (Press Enter)";
+  scalar <STDIN>;
+}
+
 sub list_examples($it){
   header "$$it{name} — examples";
   my $i = 1;
   for my $ex (@{$$it{examples}}){
-    say "$clrsel$i$clrsep)$rst $ex";
+    say "$clrsel$i$clrsep)$rst " . ex_cmd($ex);
+    my $note = ex_note($ex);
+    say "   ${yel}note:$rst $note" if length $note;
     $i++;
   }
+  detect_clipboard_tools();
+  say "${clrsel}cN$clrsep)$rst Copy example N to clipboard via " . clipboard_backend_label($cb_bin);
+  say "${clrsel}xN$clrsep)$rst Copy example N to primary + secondary + clipboard via " . clipboard_backend_label($cb_bin);
+  say "${clrsel}x$clrsep)$rst Toggle clipboard backend: xsel [" . clipboard_tool_status('xsel') . "], xclip [" . clipboard_tool_status('xclip') . "]";
   say "${clrsel}ENTER$clrsep)$rst Back";
 }
 
 sub prompt($msg){
   print "$yel$msg$rst ";
-  chomp( my $ans = <STDIN> // '' );
+  my $ans = <STDIN>;
+  return undef if !defined $ans;
+  chomp $ans;
   return $ans;
 }
 
 sub run_cmd($cmd){
-  say "\n\$ $clrcmd$cmd$rst";
+  say "
+\$ $clrcmd$cmd$rst";
   system('bash', '-c', $cmd);
-  say "\n[exit code:$?]  (Press Enter)";
-  scalar <STDIN>;
+  show_message("exit code: $?" );
 }
 
 # ---------- UI flow ----------
+detect_clipboard_tools();
 while (1){
   list_sections($catalog);
   my $s = prompt("Pick a section number:");
-  exit 0 if ($s//'') eq 'q';
-  next if $s !~ /^\d+$/ || $s < 1 || $s > @$catalog;
+  exit 0 if !defined $s || ($s//'') eq 'q';
+  if ($s !~ /^\d+$/ || $s < 1 || $s > @$catalog) {
+    show_message("Invalid section: $s");
+    next;
+  }
 
   my $sec = $$catalog[$s-1];
   while (1){
     list_items($sec);
     my $i = prompt("Pick a tool to try examples:");
-    last if ($i//'') eq '';
-    next if $i !~ /^\d+$/ || $i < 1 || $i > @{$$sec{items}};
+    last if !defined $i || ($i//'') eq '';
+    if ($i !~ /^\d+$/ || $i < 1 || $i > @{$$sec{items}}) {
+      show_message("Invalid tool: $i");
+      next;
+    }
 
     my $it = $$sec{items}[$i-1];
     while (1){
       list_examples($it);
-      my $e = prompt("Run which example?");
-      last if ($e//'') eq '';
-      next if $e !~ /^\d+$/ || $e < 1 || $e > @{$$it{examples}};
-      my $cmd = $$it{examples}[$e-1];
+      my $e = prompt("Run which example? (number, cN, x, xN, eg. c12<enter>)");
+      last if !defined $e || ($e//'') eq '';
+
+      if (lc($e) eq 'x') {
+        my ($ok, $msg) = toggle_clipboard_backend();
+        show_message($msg);
+        next;
+      }
+
+      if ($e =~ /^([cx])(\d+)$/i) {
+        my ($mode, $n) = (lc($1), $2);
+        if ($n < 1 || $n > @{$$it{examples}}) {
+          show_message("Invalid example number: $n");
+          next;
+        }
+        my $cmd = ex_cmd($$it{examples}[$n-1]);
+        my ($ok, $msg) = copy_text($cmd, $mode eq 'c' ? 'clipboard' : 'all');
+        show_message(($ok ? "copied: $msg" : $msg));
+        next;
+      }
+
+      if ($e !~ /^\d+$/ || $e < 1 || $e > @{$$it{examples}}) {
+        show_message("Invalid input: $e");
+        next;
+      }
+      my $cmd = ex_cmd($$it{examples}[$e-1]);
       if (!have($$it{detect})){
-        say "\n[$$it{name} not installed] Try: sudo apt install $$it{detect}";
-        scalar <STDIN>;
+        show_message("$$it{name} not installed. Try: sudo apt install $$it{detect}");
         next;
       }
       run_cmd($cmd);
